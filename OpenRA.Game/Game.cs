@@ -363,7 +363,7 @@ namespace OpenRA
 		public static void CreateAndJoinServer(Settings settings, string map)
 		{
 			server = new Server.Server(modData, settings, map);
-			JoinServer(IPAddress.Loopback.ToString(), settings.Server.ListenPort);
+			JoinServer("localhost", settings.Server.ListenPort);
 		}
 	}
 }

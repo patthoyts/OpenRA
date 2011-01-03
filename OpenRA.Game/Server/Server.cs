@@ -30,7 +30,8 @@ namespace OpenRA.Server
 		// Pre-verified player connections
 		public List<Connection> preConns = new List<Connection>();
 
-		TcpListener listener = null;
+		TcpListener mListener = null;
+		TcpListener mListener6 = null;
 		Dictionary<int, List<Connection>> inFlightFrames
 			= new Dictionary<int, List<Connection>>();
 		
@@ -53,7 +54,8 @@ namespace OpenRA.Server
 		{
 			Log.AddChannel("server", "server.log");
 
-			listener = new TcpListener(IPAddress.Any, settings.Server.ListenPort);
+			mListener = new TcpListener(IPAddress.Any, settings.Server.ListenPort);
+			mListener6 = new TcpListener(IPAddress.IPv6Any, settings.Server.ListenPort);
 			Name = settings.Server.Name;
 			randomSeed = (int)DateTime.Now.ToBinary();
 			ModData = modData;
@@ -75,12 +77,11 @@ namespace OpenRA.Server
 				Log.Write("server","- {0}", m);
 			
 			Log.Write("server", "Initial map: {0}",lobbyInfo.GlobalSettings.Map);
-			
-			try
-			{
-				listener.Start();
-			}
-			catch (Exception)
+
+			try { mListener.Start(); } catch (Exception e) { Log.Write("server", "problem: " + e.Message); mListener = null; }
+			try { mListener6.Start(); } catch (Exception e) { Log.Write("server", "problem: " + e.Message); mListener6 = null; }
+
+			if (mListener == null && mListener6 == null)
 			{
 				throw new InvalidOperationException( "Unable to start server: port is already in use" );
 			}
@@ -91,14 +92,18 @@ namespace OpenRA.Server
 				for( ; ; )
 				{
 					var checkRead = new ArrayList();
-					checkRead.Add( listener.Server );
-					foreach( var c in conns ) checkRead.Add( c.socket );
+					if (mListener != null) checkRead.Add( mListener.Server );
+					if (mListener6 != null) checkRead.Add( mListener6.Server );
+					foreach (var c in conns) checkRead.Add(c.socket);
 					foreach( var c in preConns ) checkRead.Add( c.socket );
 					
 					Socket.Select( checkRead, null, null, timeout );
 
 					foreach( Socket s in checkRead )
-						if( s == listener.Server ) AcceptConnection();
+						if( mListener != null && s == mListener.Server )
+							AcceptConnection(mListener);
+						else if( mListener6 != null && s == mListener6.Server )
+							AcceptConnection(mListener6);
 						else if (preConns.Count > 0)
 						{
 							var p = preConns.SingleOrDefault( c => c.socket == s );
@@ -119,8 +124,8 @@ namespace OpenRA.Server
 
 				preConns.Clear();
 				conns.Clear();
-				try { listener.Stop(); }
-				catch { }
+				try { mListener.Stop(); } catch { }
+				try { mListener6.Stop(); } catch { }
 			} ) { IsBackground = true }.Start();
 		}
 
@@ -138,7 +143,7 @@ namespace OpenRA.Server
 			throw new InvalidOperationException("Already got 256 players");
 		}
 
-		void AcceptConnection()
+		void AcceptConnection(TcpListener listener)
 		{
 			Socket newSocket = null;
 
